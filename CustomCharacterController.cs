@@ -16,7 +16,7 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 
-[RequireComponent(typeof(Collider2D))]      //Requires either Circle or Capsule Collider (2D)
+[RequireComponent(typeof(Collider2D))]
 [RequireComponent(typeof(Rigidbody2D))]
 
 public class CustomCharacterController : MonoBehaviour
@@ -54,6 +54,57 @@ public class CustomCharacterController : MonoBehaviour
     protected bool m_Jump = false;
     private bool m_HasWallJumpedThisFrame = false;
 
+    private int m_InputLockCount = 0;
+    private Vector2 m_LockedVelocity;
+
+    /* -------------------------- PUBLIC METHODS --------------------------------------- */
+
+    // flipX indicates whether the vector should be flipped if the unit is facing the other direction.
+    public void ApplyKnockback(Vector2 velocity, bool flipX)
+    {
+        if (!flipX)
+        {
+            m_Velocity = velocity;
+        }
+        else
+        {
+            m_Velocity = Vector2.Scale(velocity, (Vector2)m_T.localScale);
+        }
+    }
+
+    // Use these public methods to pass inputs
+    public void Move(float x, float y)
+    {
+        if(m_InputLockCount > 0) { return; };
+        m_InputMove.x = x;
+        m_InputMove.y = y;
+    }
+    public void Jump()
+    {
+        if (m_InputLockCount > 0) { return; };
+        m_Jump = true;
+    }
+
+    public void LockVelocityToFor(Vector2 vel, int frames, bool flipX)
+    {
+        m_InputLockCount = frames;
+        if(!flipX)
+        {
+            m_LockedVelocity = vel;
+        }
+        else
+        {
+            m_LockedVelocity = Vector2.Scale(vel, (Vector2)m_T.localScale);
+        }
+    }
+    
+    public Vector2 GetVelocity()
+    {
+        return m_Velocity;
+    }
+
+    /* ----- Other Methods ----- */
+
     // Start is called before the first frame update
     void Start()
     {
@@ -65,6 +116,7 @@ public class CustomCharacterController : MonoBehaviour
         // Rb setup
         m_Rb.gravityScale = 0; // Gravity will be applied in this script instead.
         m_Rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+        m_Rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
         // Initialising private variables
         m_IsGrounded = false;
@@ -76,7 +128,6 @@ public class CustomCharacterController : MonoBehaviour
     // Update is called once per frame
     void Update()
     {
-        CheckInputs();
     }
 
     private Vector3 localFlip;
@@ -91,17 +142,11 @@ public class CustomCharacterController : MonoBehaviour
         m_T.localScale = localFlip;
     }
 
-    virtual protected void CheckInputs() // Can override this function in class derivatives to change controls.
-    {
-        //Movement Input Example
-        // Can assign any of the variables below.
-        m_InputMove.x = Input.GetAxisRaw("Horizontal");
-        m_InputMove.y = Input.GetAxisRaw("Vertical");
-        if (m_Jump == false) { m_Jump = Input.GetButtonDown("Jump"); }; // Latch to true if triggered. Remains true until dealt with in fixedupdate(). Otherwise input may not be detected correctly.
-    }
+
 
     private void ApplyInputs()
-    {
+    { 
+
         CheckContacts();
 
         ApplyGravity();
@@ -130,6 +175,10 @@ public class CustomCharacterController : MonoBehaviour
 
         if(!m_IsGrounded) // Air Influence
         {
+            // Adjust jumpCount
+            if(m_JumpCount == 2) { m_JumpCount = 1; };
+
+            // Apply air influence
             float coeff = moveSpeed - Mathf.Abs(m_Velocity.x);
             if (Mathf.Sign(m_InputMove.x) != Mathf.Sign(m_Velocity.x)) { coeff = 1.0f; };
             m_Velocity.x += coeff * m_InputMove.x * airInfluence;
@@ -141,10 +190,22 @@ public class CustomCharacterController : MonoBehaviour
             m_Velocity.y = jumpSpeed; m_JumpCount--;
         }
 
+        // If velocity is locked
+
+        if (m_InputLockCount > 0)
+        {
+            m_InputLockCount--;
+            m_Velocity = m_LockedVelocity;
+            if (m_InputLockCount == 0) { m_Velocity = Vector2.zero; };
+        }
+
         // Update position with velocity.
         newPosition += (Vector3)(m_Velocity) * (float)Time.fixedDeltaTime;
         m_Rb.MovePosition(newPosition);
 
+        //Reset inputs
+        m_InputMove.x = 0;
+        m_InputMove.y = 0;
         m_Jump = false; //Reset sticky inputs
     }
 
@@ -263,10 +324,5 @@ public class CustomCharacterController : MonoBehaviour
         }
     }
 
-    /* ----- PUBLIC METHODS ----- */
 
-    public void ApplyKnockback(Vector2 velocity)
-    {
-        m_Velocity = velocity;
-    }
 }
